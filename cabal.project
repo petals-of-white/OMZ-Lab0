@@ -1,0 +1,3 @@
+packages: . dicom
+optimization: False
+allow-newer: linear, hashtables

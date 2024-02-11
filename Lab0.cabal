@@ -1,0 +1,39 @@
+cabal-version: 3.0
+name:          Lab0
+version:       0.1.0.3
+build-type:    Simple
+author:        Maksym Syvash
+category:      Graphics
+
+executable Lab0
+  main-is:          HelloTriangle.hs
+  build-depends:
+    , base
+    , GPipe
+    , GPipe-GLFW
+    , JuicyPixels
+    , linear
+
+  --  , GPipe >=2.2
+  --  , GPipe-GLFW >=1.4
+  ghc-options:      -Wall -threaded
+  hs-source-dirs:   src
+  default-language: GHC2021
+
+executable DicomExample
+  main-is:          DicomExample.hs
+  build-depends:
+    , base
+    , bytestring   >=0.12.0.0
+    , dicom
+    , GPipe
+    , GPipe-GLFW
+    , JuicyPixels
+    , lens
+    , linear
+    , pretty
+    , binary
+
+  ghc-options:      -Wall -threaded
+  hs-source-dirs:   src
+  default-language: GHC2021

@@ -1,0 +1,37 @@
+cabal-version: 3.8
+name:          dicom
+version:       0.3.0.0
+synopsis:
+  A library for reading and writing DICOM files in the Explicit VR Little Endian transfer syntax.
+
+-- license:             GPL-3
+-- license-file:        LICENSE
+homepage:      http://github.com/dicomgrid/dicom-haskell-library/
+author:        Phil Freeman
+maintainer:    paf31@cantab.net
+copyright:     (c) DICOM Grid Inc. 2015 
+category:      Data, Medical
+build-type:    Simple
+
+library
+  exposed-modules:
+    Data.DICOM
+    Data.DICOM.Dictionary
+    Data.DICOM.FileMetaInformation
+    Data.DICOM.Object
+    Data.DICOM.Pretty
+    Data.DICOM.Tag
+    Data.DICOM.VL
+    Data.DICOM.VR
+
+  build-depends:
+    , base
+    , binary      >=0.7
+    , bytestring  >=0.10
+    , pretty      >=1.1
+    , safe        >=0.3
+    , time        >=1.5
+  
+
+  hs-source-dirs:   src
+  default-language: Haskell2010
