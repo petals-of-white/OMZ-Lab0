@@ -3,9 +3,10 @@ module Main where
 import           Control.Monad               (unless)
 import           Data.Binary                 as Binary (decode, encode)
 import qualified Data.ByteString             as BS
+import qualified Data.ByteString.Char8       as BSChar
 import           Data.ByteString.Lazy        as LBS (append, fromStrict)
 import           Data.DICOM                  as Dicom
-import           Data.List                   (find)
+import           Data.List                   (delete, find)
 import           Data.Maybe                  (fromJust)
 import           Data.Word                   (Word16, Word8)
 import           Graphics.GPipe
@@ -13,22 +14,24 @@ import           Graphics.GPipe.Context.GLFW (WindowConfig (..))
 import qualified Graphics.GPipe.Context.GLFW as GLFW
 import           Prelude                     hiding (reverse)
 
-
 main :: IO ()
 main = do
   dicom <- either error id <$> readObjectFromFile "C:\\Users\\maxle\\Обробка_медичних_зображень\\Lab0\\DICOM_Image_8b.dcm"
-  let ((rows, columns), imgBytes) = fromJust $ getDicomData dicom
+  let ((rows, columns), imgBytes, intercept, slope, bitsAlloc) = fromJust $ getDicomData dicom
       size = rows * columns
-      imgAsWord8 :: [Word8] = (decode . LBS.append (encode size) . fromStrict) imgBytes
-      imgAsFloat = map convert imgAsWord8
-      convert word = (realToFrac word / 255) :: Float
+      imgWord8 :: [Word8] = (decode . LBS.append (encode size) . fromStrict) imgBytes
   putStrLn $
-    "Rows: " ++ show rows ++ ". Columns: " ++ show columns ++ ". Image data: "
-    ++ show (Prelude.length imgAsWord8) ++ ". " ++ show imgAsFloat --(map (\word -> realToFrac word / 255 :: Float) imgAsWord8)
+    "Rows: " ++ show rows ++ ". Columns: " ++ show columns ++ ". Intercept: "
+    ++ show intercept ++ ". Slope: " ++ show slope ++ ". Bits allocated: " ++ show bitsAlloc
+
+  case (intercept, slope, bitsAlloc) of
+    (i, s, _) | i /= 0, s /= 0 -> putStrLn "gl float"
+    (_,_, 8)                   -> putStrLn "gl byte"
+    (_,_, 16)                  -> putStrLn "gl short"
+    _                          -> error "Unrecognized type?"
+
 
   runContextT GLFW.defaultHandleConfig $ do
-    win <- newWindow (WindowFormatColor RGB8) ((GLFW.defaultWindowConfig "Dicom Test") {configWidth=rows, configHeight=columns})
-
     -- buffer
     vertexBuffer :: Buffer os (B2 Float, B2 Float) <- newBuffer 4
 
@@ -36,26 +39,28 @@ main = do
     writeBuffer vertexBuffer 0 [(V2 (-1) (-1), V2 0 1),  (V2 1 (-1), V2 1 1),
                                (V2 (-1) 1, V2 0 0),     (V2 1 1, V2 1 0)]
 
-    --texture
+    -- Textures
     let texSize = V2 rows columns
-    tex <- newTexture2D R8 texSize 1
-    -- liftIO $ writeFile "sus.txt" (show imgAsFloat)
+    tex <- newTexture2D R8UI texSize 1
+    writeTexture2D tex 0 0 texSize imgWord8
 
-        --convert = const ((0.1) :: Float)
-    writeTexture2D tex 0 0 texSize imgAsFloat
 
-    -- shader
+    win <- newWindow (WindowFormatColor RGB8) ((GLFW.defaultWindowConfig "Dicom Test") {configWidth=rows, configHeight=columns})
+
+    -- Shaders
     shader <- compileShader $ do
       primitiveStream <- toPrimitiveStream id
       let primitiveStream2 = fmap (\(V2 x y, uv) -> (V4 x y 0 1, uv)) primitiveStream
       fragmentStream <- rasterize (const (FrontAndBack, ViewPort (V2 0 0) (V2 rows columns), DepthRange 0 1)) primitiveStream2
-      let filter = SamplerFilter Nearest Nearest Nearest Nothing
-          --filter = SampleFilter
+      let --filter = SamplerFilter Nearest Nearest Nearest Nothing
+          filter = SamplerNearest
           edge = (pure ClampToEdge, undefined)
       samp <- newSampler2D (const (tex, filter, edge))
       let sampleTexture = pure . sample2D samp SampleAuto Nothing Nothing
-          fragmentStream2 = fmap sampleTexture fragmentStream
-      drawWindowColor (const (win, ContextColorOption NoBlending (pure True))) fragmentStream2
+          fragmentStreamSampled = fmap sampleTexture fragmentStream
+          -- перетворимо word8 на float
+          fragmentStreamFloat :: FragmentStream (V3 (S F Float)) = fmap ((/ 255) . fmap toFloat) fragmentStreamSampled
+      drawWindowColor (const (win, ContextColorOption NoBlending (pure True))) fragmentStreamFloat
 
     renderLoop win $ do
       clearWindowColor win 0
@@ -69,6 +74,24 @@ renderLoop win rendering = do
   unless (closeRequested == Just True) $
     renderLoop win rendering
 
+
+
+-- Data extraction
+type Intercept = Float
+type Slope = Float
+type Size = (Int, Int)
+type BitsAllocated = Word16
+
+getDicomData :: Object -> Maybe (Size, BS.ByteString, Intercept, Slope, BitsAllocated)
+getDicomData dicom = do
+      r :: Word16 <- decode . LBS.fromStrict . BS.reverse <$> findData Rows dicom
+      c :: Word16 <- decode . LBS.fromStrict . BS.reverse <$> findData Columns dicom
+      bitsAllocated :: BitsAllocated <- decode . LBS.fromStrict . BS.reverse <$> findData BitsAllocated dicom
+      img <- findData PixelData dicom
+      rescaleInter :: Float <- read. delete '+' . BSChar.unpack <$> findData RescaleIntercept dicom
+      rescaleSlope :: Float <- read . delete '+' . BSChar.unpack <$> findData RescaleSlope dicom
+      return ((fromIntegral r, fromIntegral c), img, rescaleInter, rescaleSlope, bitsAllocated)
+
 findElement :: Tag -> Object -> Maybe Element
 findElement t = find (\Element {elementTag = _t} -> _t == t) . runObject
 
@@ -77,10 +100,3 @@ findData t o = findElement t o >>=
         (\Element {elementContent = content} -> case content of
             BytesContent bytesContent -> Just bytesContent
             _                         -> Nothing)
-
-getDicomData :: Object -> Maybe ((Int, Int), BS.ByteString)
-getDicomData dicom = do
-      r :: Word16 <- decode . LBS.fromStrict . BS.reverse <$> findData Rows dicom
-      c :: Word16 <- decode . LBS.fromStrict . BS.reverse <$> findData Columns dicom
-      img <- findData PixelData dicom
-      return ((fromIntegral r, fromIntegral c), img)

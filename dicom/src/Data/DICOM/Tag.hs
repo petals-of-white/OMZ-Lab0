@@ -29,6 +29,7 @@ module Data.DICOM.Tag
   , pattern RescaleSlope
   , pattern SamplesPerPixel
   , pattern PhotometricInterpretation
+  , pattern BitsAllocated
   , tag
   ) where
 
