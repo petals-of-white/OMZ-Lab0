@@ -14,29 +14,44 @@ import qualified Graphics.GPipe.Context.GLFW as GLFW
 import           Prelude                     hiding (reverse)
 
 
-
 main :: IO ()
 main = do
   dicom <- either error id <$> readObjectFromFile "C:\\Users\\maxle\\Обробка_медичних_зображень\\Lab0\\DICOM_Image_8b.dcm"
   let ((rows, columns), imgBytes) = fromJust $ getDicomData dicom
+      size = rows * columns
+      imgAsWord8 :: [Word8] = (decode . LBS.append (encode size) . fromStrict) imgBytes
+      imgAsFloat = map convert imgAsWord8
+      convert word = (realToFrac word / 255) :: Float
   putStrLn $
-    "Rows: " ++ show rows ++ ". Columns: " ++ show columns ++ ". Image data: " ++ show (Prelude.length imgBytes)
+    "Rows: " ++ show rows ++ ". Columns: " ++ show columns ++ ". Image data: "
+    ++ show (Prelude.length imgAsWord8) ++ ". " ++ show imgAsFloat --(map (\word -> realToFrac word / 255 :: Float) imgAsWord8)
 
   runContextT GLFW.defaultHandleConfig $ do
     win <- newWindow (WindowFormatColor RGB8) ((GLFW.defaultWindowConfig "Dicom Test") {configWidth=rows, configHeight=columns})
+
+    -- buffer
     vertexBuffer :: Buffer os (B2 Float, B2 Float) <- newBuffer 4
-    writeBuffer vertexBuffer 0 [(V2 (-1) (-1), V2 0 1), (V2 1 (-1), V2 1 1), (V2 (-1) 1, V2 0 0), (V2 1 1, V2 1 0)]
+
+    -- задамо у вершини у вигляді координата, uv-текстури
+    writeBuffer vertexBuffer 0 [(V2 (-1) (-1), V2 0 1),  (V2 1 (-1), V2 1 1),
+                               (V2 (-1) 1, V2 0 0),     (V2 1 1, V2 1 0)]
+
+    --texture
     let texSize = V2 rows columns
     tex <- newTexture2D R8 texSize 1
-    writeTexture2D tex 0 0 texSize imgBytes
+    -- liftIO $ writeFile "sus.txt" (show imgAsFloat)
 
+        --convert = const ((0.1) :: Float)
+    writeTexture2D tex 0 0 texSize imgAsFloat
+
+    -- shader
     shader <- compileShader $ do
       primitiveStream <- toPrimitiveStream id
       let primitiveStream2 = fmap (\(V2 x y, uv) -> (V4 x y 0 1, uv)) primitiveStream
       fragmentStream <- rasterize (const (FrontAndBack, ViewPort (V2 0 0) (V2 rows columns), DepthRange 0 1)) primitiveStream2
-      let --filter = SamplerFilter Nearest Nearest Nearest Nothing
-          filter = SamplerNearest
-          edge = (pure Mirror, undefined)
+      let filter = SamplerFilter Nearest Nearest Nearest Nothing
+          --filter = SampleFilter
+          edge = (pure ClampToEdge, undefined)
       samp <- newSampler2D (const (tex, filter, edge))
       let sampleTexture = pure . sample2D samp SampleAuto Nothing Nothing
           fragmentStream2 = fmap sampleTexture fragmentStream
@@ -63,12 +78,9 @@ findData t o = findElement t o >>=
             BytesContent bytesContent -> Just bytesContent
             _                         -> Nothing)
 
-getDicomData :: Object -> Maybe ((Int, Int), [Float])
+getDicomData :: Object -> Maybe ((Int, Int), BS.ByteString)
 getDicomData dicom = do
       r :: Word16 <- decode . LBS.fromStrict . BS.reverse <$> findData Rows dicom
       c :: Word16 <- decode . LBS.fromStrict . BS.reverse <$> findData Columns dicom
-      let size :: Int = fromIntegral r * fromIntegral c
-      img :: [Word8] <- decode . LBS.append (encode size) . fromStrict <$> findData PixelData dicom
-      -- rescaleInter <- unpack <$> findData RescaleIntercept dicom
-      -- rescaleSlope <- unpack <$> findData RescaleSlope dicom
-      return ((fromIntegral r, fromIntegral c), map (\word -> realToFrac word / 255 :: Float) img)
+      img <- findData PixelData dicom
+      return ((fromIntegral r, fromIntegral c), img)
