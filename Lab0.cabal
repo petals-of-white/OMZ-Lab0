@@ -5,6 +5,8 @@ build-type:    Simple
 author:        Maksym Syvash
 category:      Graphics
 
+data-files: DICOM_Image_8b.dcm
+
 executable Lab0
   main-is:          HelloTriangle.hs
   build-depends:
@@ -22,6 +24,7 @@ executable Lab0
 
 executable DicomExample
   main-is:          DicomExample.hs
+  other-modules: Paths_Lab0
   build-depends:
     , base
     , bytestring   >=0.12.0.0
