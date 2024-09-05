@@ -13,10 +13,12 @@ import           Graphics.GPipe
 import           Graphics.GPipe.Context.GLFW (WindowConfig (..))
 import qualified Graphics.GPipe.Context.GLFW as GLFW
 import           Prelude                     hiding (reverse)
+import Paths_Lab0 (getDataFileName)
 
 main :: IO ()
 main = do
-  dicom <- either error id <$> readObjectFromFile "C:\\Users\\maxle\\Обробка_медичних_зображень\\Lab0\\DICOM_Image_8b.dcm"
+  filename <- getDataFileName "DICOM_Image_8b.dcm"
+  dicom <- either error id <$> readObjectFromFile filename
   let ((rows, columns), imgBytes, intercept, slope, bitsAlloc) = fromJust $ getDicomData dicom
       size = rows * columns
       imgWord8 :: [Word8] = (decode . LBS.append (encode size) . fromStrict) imgBytes
